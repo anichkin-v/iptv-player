@@ -17,4 +17,4 @@ IPTV плеер для просмотра ТВ каналов в формате 
 
 1. Клонируйте репозиторий:
    ```bash
-   git clone https://github.com/yourusername/iptv-player.git
+   git clone https://github.com/anichkin-v/iptv-player.git
