@@ -131,7 +131,7 @@ function updateChannelList(category) {
         channelDiv.className = 'channel';
 
         const epgData = findEpgData(channel.title.toLowerCase());
-        const iconSrc = epgData?.icon || 'http://iptv.apiweb.uz/css/no_logo.png';  // Иконка канала (по умолчанию если не найдено)
+        const iconSrc = epgData?.icon || './no_logo.png';  // Иконка канала (по умолчанию если не найдено)
         const currentProgram = getCurrentProgram(epgData);  // Текущая программа
 
         // Структура HTML для отображения канала
