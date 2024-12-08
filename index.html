@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru-RU">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Player</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="container">
+    <!-- Список каналов -->
+    <div id="channel-list">
+        <h3>Каналы</h3>
+        <select id="filter-group" onchange="filterChannels()">
+            <option value="all">Все категории</option>
+        </select>
+        <ul id="channels"></ul>
+    </div>
+
+    <!-- Плеер -->
+    <div id="video-player">
+        <h3>IPTV Player</h3>
+        <div id="player"></div>
+        <div id="current-program">
+            <span id="current-program-title" > Загрузка...</span>
+        </div>
+        <!-- Кнопка для открытия попапа -->
+        <button id="open-playlist-popup" class="open-popup-btn">Загрузить плейлист</button>
+
+        <!-- Попап для загрузки плейлиста -->
+        <div id="playlist-popup" class="popup">
+            <div class="popup-content">
+                <span id="close-popup" class="close-btn">&times;</span>
+                <h3>Загрузить плейлист</h3>
+                <div>загрузите файл плейлиста в формате M3U8</div>
+                <input type="file" id="playlist-file" accept=".m3u8" />
+                <div>или укажите ссылку на плейлист в формате M3U8</div>
+                <input type="text" id="playlist-url" placeholder="Введите URL плейлиста" />
+                <button id="load-playlist">Загрузить</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Программа передач -->
+    <div id="epg">
+        <h3>Программа передач</h3>
+        <ul id="epg-list"></ul>
+    </div>
+</div>
+
+<script type="text/javascript" src="./dist/player.js"></script>
+<script type="text/javascript" src="./js/iptv.js"></script>
+
+</body>
+</html>
