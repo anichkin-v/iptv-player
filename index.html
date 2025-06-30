@@ -47,7 +47,7 @@
                 "https://twitter.com",
                 "https://www.instagram.com"
             ],
-            "image": "/css/favicon/no_logo.png",
+            "image": "http://example.com/css/favicon/no_logo.png",
             "author": {
                 "@type": "Organization",
                 "name": "IPTV Web Player"
@@ -55,10 +55,9 @@
         }
     </script>
 
-    <title> IPTV Web Player </title>
+    <title>IPTV Web Player</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link href="./css/style.css" rel="stylesheet">
-
 </head>
 <body>
 <div id="header">
@@ -70,13 +69,6 @@
     </div>
     <div class="header-section">
         <span id="timezone-display"></span>
-    </div>
-    <div class="header-section">
-        <div class="search-container">
-            <i class="fas fa-search"></i>
-            <input type="text" id="search" placeholder="Поиск...">
-            <span class="search-clear">&times;</span>
-        </div>
     </div>
     <div class="header-section">
         <button id="refresh-epg" class="header-button">
@@ -94,23 +86,27 @@
             <select id="group-filter">
                 <option value="">Все группы</option>
             </select>
+            <div class="search-container">
+                <input type="text" id="search" placeholder="Поиск каналов...">
+                <span class="search-clear">&times;</span>
+            </div>
         </div>
         <div id="channels-list">
-            <div class="loading">Загрузка каналов...</div>
+            <div class="loading">Загрузка каналов</div>
         </div>
     </div>
 
     <div id="main-content">
         <div id="player-container">
-            <div class="loading">Плеер загружается...</div>
+            <div class="loading">Загрузка плеера</div>
         </div>
         <div id="epg-container">
-            <div class="loading">Загрузка программы...</div>
+            <div class="loading">Загрузка программы</div>
         </div>
     </div>
 </div>
 
-<!-- Диалоговое окно загрузки плейлиста -->
+<!-- Playlist dialog -->
 <div id="playlist-dialog" class="dialog-overlay">
     <div class="dialog">
         <div class="dialog-header">
@@ -119,8 +115,9 @@
         </div>
         <div class="dialog-body">
             <div class="dialog-tabs">
-                <div class="dialog-tab active" data-tab="url-tab">По URL</div>
-                <div class="dialog-tab" data-tab="file-tab">Файл</div>
+                <div class="dialog-tab active" data-tab="url-tab">URL</div>
+                <div class="dialog-tab" data-tab="file-tab">Файлом</div>
+                <div class="dialog-tab" data-tab="default-tab">Тестовый</div>
             </div>
 
             <div id="url-tab" class="dialog-content active">
@@ -133,7 +130,6 @@
                 </div>
                 <div id="url-status" class="status-message"></div>
             </div>
-
             <div id="file-tab" class="dialog-content">
                 <div class="form-group">
                     <label class="form-label">Выберите файл плейлиста:</label>
@@ -150,23 +146,44 @@
                 </div>
                 <div id="file-status" class="status-message"></div>
             </div>
+
+            <div class="dialog-content" id="default-tab">
+                <div class="form-group">
+                    <p>Загрузить плейлист для демонстрации функций плеера.</p>
+                </div>
+                <div id="default-status" class="status-message"></div>
+                <div class="form-group">
+                    <button id="load-default-btn" class="btn btn-primary">Загрузить тестовый плейлист</button>
+                </div>
+            </div>
         </div>
         <div class="dialog-footer">
             <button id="cancel-load-btn" class="btn btn-outline">Отмена</button>
         </div>
     </div>
 </div>
-
+<!-- EPG dialog -->
+<div id="epg-dialog" class="dialog-overlay">
+    <div class="dialog">
+        <div class="dialog-header">
+            <div class="dialog-title">Обновление EPG</div>
+            <button class="dialog-close">&times;</button>
+        </div>
+        <div class="dialog-body">
+            <p>Вы уверены, что хотите обновить данные электронной программы передач (EPG)?</p>
+            <p>Это может занять некоторое время.</p>
+            <div id="epg-status" class="status-message"></div>
+        </div>
+        <div class="dialog-footer">
+            <button id="cancel-epg-btn" class="btn btn-outline">Отмена</button>
+            <button id="refresh-epg-btn" class="btn btn-primary">
+                <i class="fas fa-sync-alt"></i> Обновить
+            </button>
+        </div>
+    </div>
+</div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="./dist/player.js"></script>
-<script src="./js/iptv.js"
-
-<!-- Fallback для VenomPlayer на старых устройствах -->
-<script>
-    if (typeof VenomPlayer === 'undefined') {
-        console.warn('VenomPlayer не загружен, будет использован стандартный video элемент');
-    }
-</script>
-
+<script src="./js/iptv.js"></script>
 </body>
 </html>
