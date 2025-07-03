@@ -5,10 +5,10 @@ const CONFIG = Object.freeze({
     M3U8_EXPIRY: 365 * 24 * 60 * 60 * 1000,
     EPG_EXPIRY: 6 * 60 * 60 * 1000,
     EPG_TIMEZONE_OFFSET: 3,
-    EPG_URL: 'http://exemple.com/epg.xml',
-    DEFAULT_PLAYLIST_URL: 'http://exemple.com/playlist.php?default=1',
+    EPG_URL: 'http://iptv.apiweb.uz/epg.xml',
+    DEFAULT_PLAYLIST_URL: 'http://iptv.apiweb.uz/playlist.php?default=1',
     CHANNELS_PER_PAGE: 3500,
-    EPG_UPDATE_INTERVAL: 21600,
+    EPG_UPDATE_INTERVAL: 30000,
     SEARCH_DEBOUNCE_DELAY: 200,
     MAX_CACHE_SIZE: 600,
     NOTIFICATION_DURATION: 10000,
@@ -106,6 +106,44 @@ class Performance {
     }
 }
 
+// ===== CHANNEL NAME NORMALIZER =====
+class ChannelNameNormalizer {
+    static normalizeChannelName(name) {
+        if (!name || typeof name !== 'string') return '';
+
+        return name
+            .replace(/\([^)]*\)/g, '')
+            .replace(/\+\d+\s*/g, '')
+            .replace(/\b(HD|FHD|UHD|4K|SD)\b/gi, '')
+            .replace(/[^\wа-яё\s]/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+
+    static extractKeywords(name) {
+        const normalized = this.normalizeChannelName(name);
+        return normalized.split(/\s+/).filter(word => word.length > 1);
+    }
+
+    static getChannelVariants(name) {
+        const variants = new Set();
+        const original = name.toLowerCase().trim();
+        variants.add(original);
+
+        const normalized = this.normalizeChannelName(name);
+        if (normalized) variants.add(normalized);
+
+        const withoutNumbers = normalized.replace(/\d+/g, '').trim();
+        if (withoutNumbers) variants.add(withoutNumbers);
+
+        const mainWord = normalized.split(/\s+/)[0];
+        if (mainWord && mainWord.length > 2) variants.add(mainWord);
+
+        return Array.from(variants).filter(v => v.length > 0);
+    }
+}
+
 // ===== STREAM FORMAT DETECTOR =====
 class StreamFormatDetector {
     static detectFormat(url) {
@@ -114,7 +152,6 @@ class StreamFormatDetector {
         const cleanUrl = url.split('?')[0].toLowerCase();
         const protocol = url.split(':')[0].toLowerCase();
 
-        // Protocol checks
         if (protocol === 'rtmp' || protocol === 'rtmps') {
             return { type: 'rtmp', mimeType: 'video/mp4', isLive: true, unsupported: true };
         }
@@ -123,7 +160,6 @@ class StreamFormatDetector {
             return { type: 'rtsp', mimeType: 'video/mp4', isLive: true, unsupported: true };
         }
 
-        // Extension checks
         if (cleanUrl.includes('.m3u8') || cleanUrl.includes('.m3u')) {
             return { type: 'hls', mimeType: 'application/x-mpegURL', isLive: true };
         }
@@ -132,7 +168,6 @@ class StreamFormatDetector {
             return { type: 'dash', mimeType: 'application/dash+xml', isLive: true };
         }
 
-        // Path checks
         if (url.includes('/hls/') || url.includes('type=hls')) {
             return { type: 'hls', mimeType: 'application/x-mpegURL', isLive: true };
         }
@@ -142,10 +177,6 @@ class StreamFormatDetector {
         }
 
         return { type: 'mp4', mimeType: 'video/mp4', isLive: false };
-    }
-
-    static canUseVenomPlayer(format) {
-        return window.VenomPlayer && (format.type === 'hls' || format.type === 'dash' || format.type === 'mp4');
     }
 }
 
@@ -170,7 +201,7 @@ class AppState extends EventEmitter {
             epg: new Cache(1000),
             timeparse: new Cache(1000),
             channelMatch: new Cache(CONFIG.MAX_CACHE_SIZE),
-            currentProgram: new Cache(100)
+            currentProgram: new Cache(50)
         };
     }
 
@@ -194,8 +225,12 @@ class AppState extends EventEmitter {
         return this.caches[type];
     }
 
-    destroy() {
+    clearCaches() {
         Object.values(this.caches).forEach(cache => cache.clear());
+    }
+
+    destroy() {
+        this.clearCaches();
         super.destroy();
     }
 }
@@ -347,8 +382,8 @@ class NotificationManager {
                 right: 8px;
                 background: none;
                 border: none;
-                font-size: 20px;
                 color: #999;
+                font-size: 20px;
                 cursor: pointer;
                 padding: 0;
                 width: 24px;
@@ -363,18 +398,6 @@ class NotificationManager {
             .notification-close:hover {
                 background: #f5f5f5;
                 color: #666;
-            }
-
-            @media (max-width: 600px) {
-                #notification-container {
-                    left: 10px;
-                    right: 10px;
-                    top: 10px;
-                }
-                .notification-popup {
-                    min-width: auto;
-                    max-width: 100%;
-                }
             }
         `;
         document.head.appendChild(style);
@@ -428,7 +451,7 @@ class TimeManager {
         this.userOffset = -new Date().getTimezoneOffset() / 60;
         this.epgOffset = CONFIG.EPG_TIMEZONE_OFFSET;
         this.diff = this.userOffset - this.epgOffset;
-        this.parseCache = new Cache(1000);
+        this.parseCache = new Cache(500);
     }
 
     parseEPGTime(timeStr) {
@@ -473,7 +496,7 @@ class EPGManager extends EventEmitter {
         this.timeManager = timeManager;
         this.epgCache = {};
         this.matchCache = new Cache(CONFIG.MAX_CACHE_SIZE);
-        this.programCache = new Cache(100);
+        this.programCache = new Cache(50);
         this.updateTimer = null;
     }
 
@@ -492,7 +515,19 @@ class EPGManager extends EventEmitter {
 
     async fetchFromServer() {
         try {
-            const response = await fetch(CONFIG.EPG_URL);
+            const response = await fetch(CONFIG.EPG_URL, {
+                method: 'GET',
+                mode: 'cors',
+                cache: 'no-cache',
+                headers: {
+                    'Accept': 'application/xml, text/xml, */*'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const text = await response.text();
 
             await this.db.store('epg', {
@@ -522,26 +557,26 @@ class EPGManager extends EventEmitter {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // Parse channels
         const channels = xmlDoc.getElementsByTagName('channel');
+
         for (const channel of channels) {
             const id = channel.getAttribute('id');
             if (!id) continue;
 
             const displayNames = Array.from(channel.getElementsByTagName('display-name'))
-                .map(el => el.textContent)
+                .map(el => el.textContent?.trim())
                 .filter(Boolean);
 
             const icon = channel.getElementsByTagName('icon')[0];
+            const iconSrc = icon?.getAttribute('src');
 
             this.epgCache[id] = {
                 names: displayNames,
-                icon: icon?.getAttribute('src'),
+                icon: iconSrc,
                 programs: []
             };
         }
 
-        // Parse programs
         const programs = xmlDoc.getElementsByTagName('programme');
         for (const program of programs) {
             const channelId = program.getAttribute('channel');
@@ -557,13 +592,12 @@ class EPGManager extends EventEmitter {
                 this.epgCache[channelId].programs.push({
                     start,
                     stop,
-                    title: titleEl?.textContent || 'Нет названия',
-                    desc: descEl?.textContent || ''
+                    title: titleEl?.textContent?.trim() || 'Нет названия',
+                    desc: descEl?.textContent?.trim() || ''
                 });
             }
         }
 
-        // Sort programs
         Object.values(this.epgCache).forEach(channel => {
             if (channel.programs.length > 0) {
                 channel.programs.sort((a, b) => a.start.localeCompare(b.start));
@@ -583,34 +617,125 @@ class EPGManager extends EventEmitter {
     }
 
     performChannelMatch(channelName) {
-        const cleanName = channelName
-            .replace(/\+[0-9]+\s*\([^)]+\)/g, '')
-            .replace(/HD|FHD|UHD|4K/i, '')
-            .replace(/[^a-zA-Zа-яА-Я0-9\s]/g, '')
-            .trim()
-            .toLowerCase();
+        if (!channelName || Object.keys(this.epgCache).length === 0) return null;
 
-        // Exact match
+        const channelVariants = ChannelNameNormalizer.getChannelVariants(channelName);
+        const channelKeywords = ChannelNameNormalizer.extractKeywords(channelName);
+
+        // 1. Точное совпадение оригинального названия
         for (const [channelId, data] of Object.entries(this.epgCache)) {
-            if (data.names.some(name =>
-                name.trim().toLowerCase() === cleanName)) {
-                return { channelId, ...data };
+            for (const epgName of data.names) {
+                if (epgName.toLowerCase().trim() === channelName.toLowerCase().trim()) {
+                    return { channelId, ...data };
+                }
             }
         }
 
-        // Partial match
-        for (const [channelId, data] of Object.entries(this.epgCache)) {
-            const epgNames = data.names.map(name =>
-                name.replace(/[^a-zA-Zа-яА-Я0-9\s]/g, '').trim().toLowerCase()
-            );
+        // 2. Точное совпадение нормализованных названий
+        for (const variant of channelVariants) {
+            for (const [channelId, data] of Object.entries(this.epgCache)) {
+                for (const epgName of data.names) {
+                    const normalizedEpgName = ChannelNameNormalizer.normalizeChannelName(epgName);
+                    if (normalizedEpgName === variant) {
+                        return { channelId, ...data };
+                    }
+                }
+            }
+        }
 
-            if (epgNames.some(name =>
-                name.includes(cleanName) || cleanName.includes(name))) {
-                return { channelId, ...data };
+        // 3. Поиск по содержанию основных ключевых слов
+        const mainChannelKeywords = channelKeywords.filter(word => word.length > 2);
+        if (mainChannelKeywords.length > 0) {
+            for (const [channelId, data] of Object.entries(this.epgCache)) {
+                for (const epgName of data.names) {
+                    const epgKeywords = ChannelNameNormalizer.extractKeywords(epgName);
+
+                    const matchCount = mainChannelKeywords.filter(keyword =>
+                        epgKeywords.some(epgKeyword =>
+                            epgKeyword.includes(keyword) || keyword.includes(epgKeyword)
+                        )
+                    ).length;
+
+                    if (matchCount >= Math.ceil(mainChannelKeywords.length / 2)) {
+                        return { channelId, ...data };
+                    }
+                }
+            }
+        }
+
+        // 4. Поиск по первому главному слову
+        const firstWord = mainChannelKeywords[0];
+        if (firstWord && firstWord.length > 2) {
+            for (const [channelId, data] of Object.entries(this.epgCache)) {
+                for (const epgName of data.names) {
+                    const epgFirstWord = ChannelNameNormalizer.extractKeywords(epgName)[0];
+                    if (epgFirstWord && (
+                        epgFirstWord.includes(firstWord) ||
+                        firstWord.includes(epgFirstWord) ||
+                        this.isSimilar(firstWord, epgFirstWord)
+                    )) {
+                        return { channelId, ...data };
+                    }
+                }
+            }
+        }
+
+        // 5. Поиск по частичному совпадению
+        for (const variant of channelVariants) {
+            if (variant.length < 3) continue;
+
+            for (const [channelId, data] of Object.entries(this.epgCache)) {
+                for (const epgName of data.names) {
+                    const normalizedEpgName = ChannelNameNormalizer.normalizeChannelName(epgName);
+
+                    if (normalizedEpgName.includes(variant) || variant.includes(normalizedEpgName)) {
+                        return { channelId, ...data };
+                    }
+                }
             }
         }
 
         return null;
+    }
+
+    isSimilar(str1, str2) {
+        if (!str1 || !str2) return false;
+
+        const maxLen = Math.max(str1.length, str2.length);
+        if (maxLen === 0) return true;
+
+        const distance = this.levenshteinDistance(str1, str2);
+        const similarity = (maxLen - distance) / maxLen;
+
+        return similarity >= 0.7;
+    }
+
+    levenshteinDistance(str1, str2) {
+        const matrix = [];
+
+        for (let i = 0; i <= str2.length; i++) {
+            matrix[i] = [i];
+        }
+
+        for (let j = 0; j <= str1.length; j++) {
+            matrix[0][j] = j;
+        }
+
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+
+        return matrix[str2.length][str1.length];
     }
 
     getCurrentProgram(channelName, epgData) {
@@ -618,37 +743,25 @@ class EPGManager extends EventEmitter {
             return 'Информация о программе недоступна';
         }
 
-        const cacheKey = `${channelName}_${Math.floor(Date.now() / 60000)}`;
-        const cached = this.programCache.get(cacheKey);
-        if (cached) return cached;
-
         const now = new Date();
-        let result = 'Информация о программе недоступна';
 
-        // Find current program
         for (const program of epgData.programs) {
             const startTime = this.timeManager.parseEPGTime(program.start);
             const endTime = this.timeManager.parseEPGTime(program.stop);
 
-            if (now >= startTime && now <= endTime) {
-                result = `${program.title} • до ${this.timeManager.formatTime(endTime)}`;
-                break;
+            if (now >= startTime && now < endTime) {
+                return `${program.title} • до ${this.timeManager.formatTime(endTime)}`;
             }
         }
 
-        // Find next program if no current
-        if (result === 'Информация о программе недоступна') {
-            for (const program of epgData.programs) {
-                const startTime = this.timeManager.parseEPGTime(program.start);
-                if (startTime > now) {
-                    result = `Далее: ${program.title} • в ${this.timeManager.formatTime(startTime)}`;
-                    break;
-                }
+        for (const program of epgData.programs) {
+            const startTime = this.timeManager.parseEPGTime(program.start);
+            if (startTime > now) {
+                return `Далее: ${program.title} • в ${this.timeManager.formatTime(startTime)}`;
             }
         }
 
-        this.programCache.set(cacheKey, result);
-        return result;
+        return 'Информация о программе недоступна';
     }
 
     getProgressBar(epgData) {
@@ -660,14 +773,14 @@ class EPGManager extends EventEmitter {
             const startTime = this.timeManager.parseEPGTime(program.start);
             const endTime = this.timeManager.parseEPGTime(program.stop);
 
-            if (now >= startTime && now <= endTime) {
+            if (now >= startTime && now < endTime) {
                 const programDuration = endTime.getTime() - startTime.getTime();
                 const elapsedTime = now.getTime() - startTime.getTime();
                 const progress = Math.min(100, Math.max(0, (elapsedTime / programDuration) * 100));
 
                 return `<div class="channel-progress-container">
-                            <div class="channel-progress-bar" style="width:${progress.toFixed(1)}%"></div>
-                        </div>`;
+                        <div class="channel-progress-bar" style="width:${progress.toFixed(1)}%"></div>
+                    </div>`;
             }
         }
         return '';
@@ -677,6 +790,8 @@ class EPGManager extends EventEmitter {
         this.stopUpdates();
         this.updateTimer = setInterval(() => {
             this.programCache.clear();
+            this.matchCache.clear();
+            this.timeManager.parseCache.clear();
             this.emit('update');
         }, CONFIG.EPG_UPDATE_INTERVAL);
     }
@@ -711,9 +826,31 @@ class PlaylistManager extends EventEmitter {
     }
 
     async loadFromUrl(url) {
-        const response = await fetch(url);
-        const text = await response.text();
-        return this.processPlaylist(text, url);
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                mode: 'cors',
+                cache: 'no-cache',
+                headers: {
+                    'Accept': 'application/x-mpegurl, application/vnd.apple.mpegurl, audio/mpegurl, audio/x-mpegurl, video/x-mpegurl, video/mpegurl, application/m3u8, audio/m3u8, */*',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const text = await response.text();
+
+            if (!text) {
+                throw new Error('Пустой ответ от сервера');
+            }
+
+            return this.processPlaylist(text, url);
+        } catch (error) {
+            throw new Error(`Не удалось загрузить плейлист: ${error.message}`);
+        }
     }
 
     async loadFromFile(file) {
@@ -743,15 +880,27 @@ class PlaylistManager extends EventEmitter {
     }
 
     async processPlaylist(playlistText, url) {
-        await this.db.clear('playlists');
-        await this.db.store('playlists', {
-            url: url,
-            data: playlistText,
-            timestamp: Date.now()
-        });
+        try {
+            await this.db.clear('playlists');
 
-        this.parseM3U8(playlistText);
-        this.emit('loaded', { channels: this.channels, groups: this.groups });
+            await this.db.store('playlists', {
+                url: url,
+                data: playlistText,
+                timestamp: Date.now()
+            });
+
+            this.parseM3U8(playlistText);
+
+            this.emit('loaded', {
+                channels: this.channels,
+                groups: this.groups,
+                url: url
+            });
+
+            return { channels: this.channels, groups: this.groups };
+        } catch (error) {
+            throw new Error(`Ошибка обработки плейлиста: ${error.message}`);
+        }
     }
 
     parseM3U8(text) {
@@ -762,24 +911,32 @@ class PlaylistManager extends EventEmitter {
         let currentChannel = null;
         const lines = text.split('\n');
 
-        for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) continue;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
 
-            if (trimmedLine.startsWith('#EXTINF:')) {
-                currentChannel = this.parseExtinf(trimmedLine);
-            } else if (trimmedLine.startsWith('#EXTGRP:')) {
+            if (line.startsWith('#EXTINF:')) {
+                currentChannel = this.parseExtinf(line);
+            } else if (line.startsWith('#EXTGRP:')) {
                 if (currentChannel && !currentChannel.group) {
-                    currentChannel.group = trimmedLine.slice(8).trim();
+                    currentChannel.group = line.slice(8).trim();
                 }
-            } else if (this.isValidUrl(trimmedLine)) {
+            } else if (this.isValidUrl(line)) {
                 if (currentChannel) {
-                    currentChannel.url = trimmedLine;
-                    currentChannel.format = StreamFormatDetector.detectFormat(trimmedLine);
+                    currentChannel.url = line;
+                    currentChannel.format = StreamFormatDetector.detectFormat(line);
+
+                    if (!currentChannel.name) {
+                        currentChannel.name = `Канал ${this.channels.length + 1}`;
+                    }
 
                     if (currentChannel.group) {
                         groupSet.add(currentChannel.group);
+                    } else {
+                        currentChannel.group = 'Без группы';
+                        groupSet.add('Без группы');
                     }
+
                     this.channels.push(currentChannel);
                     currentChannel = null;
                 }
@@ -796,16 +953,37 @@ class PlaylistManager extends EventEmitter {
         const commaIndex = extinf.lastIndexOf(',');
         if (commaIndex === -1) {
             channel.name = extinf.trim();
-        } else {
-            const attributesStr = extinf.slice(0, commaIndex).trim();
-            channel.name = extinf.slice(commaIndex + 1).trim();
+            return channel;
+        }
 
-            const quotedAttrRegex = /([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*"([^"]*)"/g;
-            let match;
-            while ((match = quotedAttrRegex.exec(attributesStr)) !== null) {
-                channel[match[1]] = match[2];
-                if (match[1] === 'group-title') {
-                    channel.group = match[2];
+        const attributesStr = extinf.slice(0, commaIndex).trim();
+        channel.name = extinf.slice(commaIndex + 1).trim();
+
+        const quotedAttrRegex = /([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*"([^"]*)"/g;
+        let match;
+        while ((match = quotedAttrRegex.exec(attributesStr)) !== null) {
+            const attrName = match[1];
+            const attrValue = match[2];
+
+            channel[attrName] = attrValue;
+
+            if (attrName === 'group-title') {
+                channel.group = attrValue;
+            } else if (attrName === 'tvg-logo') {
+                channel.icon = attrValue;
+            }
+        }
+
+        const unquotedAttrRegex = /([a-zA-Z][a-zA-Z0-9-]*)\s*=\s*([^\s"]+)/g;
+        while ((match = unquotedAttrRegex.exec(attributesStr)) !== null) {
+            const attrName = match[1];
+            const attrValue = match[2];
+
+            if (!channel[attrName]) {
+                channel[attrName] = attrValue;
+
+                if (attrName === 'tvg-logo') {
+                    channel.icon = attrValue;
                 }
             }
         }
@@ -823,10 +1001,11 @@ class ChannelRenderer {
     constructor(epgManager, appState) {
         this.epgManager = epgManager;
         this.appState = appState;
-        this.renderCache = new Cache(100);
     }
 
     renderChannels(container, channels, filter = '', group = '') {
+        if (!container) return [];
+
         const filteredChannels = this.filterChannels(channels, filter, group);
 
         if (filteredChannels.length === 0) {
@@ -877,13 +1056,28 @@ class ChannelRenderer {
         const element = document.createElement('div');
         element.className = 'channel-item';
         element.dataset.url = channel.url;
+        element.tabIndex = 0;
+
+        let logoSrc = '/css/no_logo.png';
+
+        if (epgData?.icon) {
+            logoSrc = epgData.icon;
+        } else if (channel.icon) {
+            logoSrc = channel.icon;
+        } else if (channel['tvg-logo']) {
+            logoSrc = channel['tvg-logo'];
+        }
 
         element.innerHTML = `
-            <img class="channel-logo" src="${epgData?.icon || '/css/no_logo.png'}" alt="${channel.name}"
-                 onerror="this.src='/css/no_logo.png'">
+            <img class="channel-logo"
+                 src="${logoSrc}"
+                 alt="${channel.name}"
+                 onerror="this.onerror=null; this.src='/css/no_logo.png';"
+                 onload="this.style.opacity='1';"
+                 style="opacity:0.5; transition: opacity 0.3s;">
             <div class="channel-info">
-                <div class="channel-name">${channel.name}</div>
-                <div class="channel-program">${currentProgram}</div>
+                <div class="channel-name" title="${channel.name}">${channel.name}</div>
+                <div class="channel-program" title="${currentProgram}">${currentProgram}</div>
                 ${progressBar}
             </div>
         `;
@@ -894,7 +1088,16 @@ class ChannelRenderer {
         }
 
         element.addEventListener('click', () => {
-            this.appState.emit('channelSelected', { channel, epgData });
+            const freshEpgData = this.epgManager.findMatchingChannel(channel.name);
+            this.appState.emit('channelSelected', { channel, epgData: freshEpgData });
+        });
+
+        element.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const freshEpgData = this.epgManager.findMatchingChannel(channel.name);
+                this.appState.emit('channelSelected', { channel, epgData: freshEpgData });
+            }
         });
 
         return element;
@@ -903,7 +1106,7 @@ class ChannelRenderer {
     addLoadMoreButton(container, filteredChannels, currentCount) {
         const loadMoreBtn = document.createElement('div');
         loadMoreBtn.className = 'load-more-btn';
-        loadMoreBtn.innerHTML = `<button class="btn">Показать еще (${filteredChannels.length - currentCount})</button>`;
+        loadMoreBtn.innerHTML = `<button class="btn btn-secondary">Показать еще (${filteredChannels.length - currentCount})</button>`;
 
         loadMoreBtn.addEventListener('click', () => {
             const performance = this.appState.get('devicePerformance');
@@ -936,6 +1139,8 @@ class EPGRenderer {
     }
 
     render(container, epgData) {
+        if (!container) return;
+
         if (!epgData?.programs?.length) {
             container.innerHTML = '<div class="no-results">Нет данных о программе</div>';
             return;
@@ -966,11 +1171,13 @@ class EPGRenderer {
 
             if (endTime < now) continue;
 
+            const isCurrent = !foundCurrent && startTime <= now && now < endTime;
+
             const programData = {
                 ...program,
                 startTime,
                 endTime,
-                isCurrent: !foundCurrent && startTime <= now && endTime >= now
+                isCurrent
             };
 
             if (programData.isCurrent) {
@@ -1006,7 +1213,6 @@ class EPGRenderer {
     }
 }
 
-// ===== PLAYER MANAGER =====
 // ===== PLAYER MANAGER =====
 class PlayerManager extends EventEmitter {
     constructor(appState) {
@@ -1077,26 +1283,16 @@ class PlayerManager extends EventEmitter {
             this.currentPlayer = VenomPlayer.make({
                 container: document.getElementById('player'),
                 publicPath: './dist/',
-
-                // Основные настройки для live трансляций
                 live: true,
                 autoPlay: true,
                 online: true,
                 syncUser: true,
                 blocked: false,
-
-                // Визуальные настройки
                 theme: 'classic',
                 aspectRatio: '16:9',
                 title: channel.name,
-
-                // Аудио и видео настройки
                 volume: localStorage.getItem('playerVolume') || 0.8,
-
-                // Буферизация для live потоков
                 liveBuffer: 30,
-
-                // Настройки интерфейса для TV трансляций
                 ui: {
                     prevNext: false,
                     share: false,
@@ -1113,24 +1309,18 @@ class PlayerManager extends EventEmitter {
                     copyWithTime: false,
                     fullscreen: true
                 },
-
-                // Источник с поддержкой аудио дорожек и субтитров
                 source: {
                     hls: channel.url,
                     type: 'application/x-mpegURL',
-
                     audio: {
                         names: ["Оригинал", "Русский дубляж", "Русский перевод"],
                         order: [0, 1, 2]
                     },
-
                     cc: [
                         { name: "Русские", url: channel.subtitles?.ru },
                         { name: "English", url: channel.subtitles?.en }
                     ].filter(subtitle => subtitle.url)
                 },
-
-                // Оптимизированная конфигурация HLS для live потоков
                 hlsConfig: {
                     maxBufferLength: 30,
                     maxMaxBufferLength: 60,
@@ -1146,25 +1336,20 @@ class PlayerManager extends EventEmitter {
                     levelLoadingMaxRetry: 4,
                     enableWorker: true,
                     enableSoftwareAES: true,
-
                     ...(performance !== 'low' && {
                         maxBufferSize: 60 * 1000 * 1000,
                         maxBufferHole: 0.5
                     })
                 },
-
                 speed: [0.75, 1, 1.25],
-
                 restrictQuality: function(quality) {
                     return false;
                 },
-
                 restrictSpeed: function(rate, quality) {
                     if (rate !== 1) {
                         return 'Изменение скорости недоступно для прямых трансляций';
                     }
                 },
-
                 text: {
                     settings: "Настройки",
                     quality: "Качество",
@@ -1179,7 +1364,6 @@ class PlayerManager extends EventEmitter {
                     pipIn: "Картинка в картинке",
                     pipOut: "Выйти из режима картинка в картинке"
                 },
-
                 format: {
                     quality: function(qualityData) {
                         let height;
@@ -1208,7 +1392,6 @@ class PlayerManager extends EventEmitter {
                         return rate === 1 ? 'Обычная' : 'x' + rate;
                     }
                 },
-
                 cssVars: {
                     'color-primary': '#ff4757',
                     'background-color-primary': 'rgba(0, 0, 0, 0.7)',
@@ -1217,7 +1400,6 @@ class PlayerManager extends EventEmitter {
                 }
             });
 
-            // Event handlers
             this.setupPlayerEventHandlers();
 
         } catch (error) {
@@ -1229,28 +1411,7 @@ class PlayerManager extends EventEmitter {
     setupPlayerEventHandlers() {
         if (!this.currentPlayer) return;
 
-        // Отслеживание доступных уровней качества
-        this.currentPlayer.on('levelLoaded', (event, data) => {
-            console.log('Level loaded:', data);
-        });
-
-        this.currentPlayer.on('levelsUpdated', (event, data) => {
-            console.log('Available quality levels updated:', data);
-            if (data && data.levels) {
-                data.levels.forEach((level, index) => {
-                    console.log(`Level ${index}:`, {
-                        width: level.width,
-                        height: level.height,
-                        bitrate: level.bitrate,
-                        name: level.name
-                    });
-                });
-            }
-        });
-
-        // Обработка ошибок и переподключения для live потоков
         this.currentPlayer.on('error', (error) => {
-            console.warn('Live stream error:', error);
             setTimeout(() => {
                 if (this.currentPlayer) {
                     this.currentPlayer.load();
@@ -1258,15 +1419,11 @@ class PlayerManager extends EventEmitter {
             }, 5000);
         });
 
-        // Обработка готовности плеера
         this.currentPlayer.on('ready', () => {
-            console.log('Live stream ready');
-
             if (this.currentPlayer.live) {
                 this.currentPlayer.seekToLive();
             }
 
-            // Восстановление настроек
             const savedQuality = localStorage.getItem('preferredQuality');
             const savedAudio = localStorage.getItem('preferredAudio');
 
@@ -1283,23 +1440,17 @@ class PlayerManager extends EventEmitter {
             }
         });
 
-        // Обработка изменения качества
         this.currentPlayer.on('qualitychange', (event) => {
             const quality = event.level || event.quality;
-            console.log('Quality changed to:', quality);
-
             if (quality && quality.height) {
                 localStorage.setItem('preferredQuality', quality.height);
             }
         });
 
-        // Обработка переключения аудиодорожек
         this.currentPlayer.on('audiochange', (audioTrack) => {
-            console.log('Audio track changed to:', audioTrack);
             localStorage.setItem('preferredAudio', audioTrack);
         });
 
-        // Дополнительные настройки безопасности
         this.setupPlayerSecurity();
     }
 
@@ -1307,7 +1458,6 @@ class PlayerManager extends EventEmitter {
         setTimeout(() => {
             const playerElement = document.getElementById('player');
             if (playerElement) {
-                // Отключение контекстного меню
                 const disableContextMenu = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1315,11 +1465,7 @@ class PlayerManager extends EventEmitter {
                 };
 
                 playerElement.addEventListener('contextmenu', disableContextMenu, true);
-
-                // Скрытие элементов брендинга
                 this.hidePlayerBranding();
-
-                // Блокировка горячих клавиш разработчика
                 this.blockDevKeys();
             }
         }, 1000);
@@ -1382,53 +1528,50 @@ class IPTVApp {
     }
 
     async init() {
-        // Initialize core components
-        this.components.appState = new AppState();
-        this.components.database = new DatabaseManager();
-        this.components.notifications = new NotificationManager();
-        this.components.timeManager = new TimeManager();
+        try {
+            this.components.appState = new AppState();
+            this.components.database = new DatabaseManager();
+            this.components.notifications = new NotificationManager();
+            this.components.timeManager = new TimeManager();
 
-        // Initialize database
-        await this.components.database.init();
-        this.components.appState.set('db', this.components.database);
+            await this.components.database.init();
+            this.components.appState.set('db', this.components.database);
 
-        // Initialize managers
-        this.components.epgManager = new EPGManager(
-            this.components.database,
-            this.components.timeManager
-        );
-        this.components.playlistManager = new PlaylistManager(this.components.database);
-        this.components.playerManager = new PlayerManager(this.components.appState);
+            this.components.epgManager = new EPGManager(
+                this.components.database,
+                this.components.timeManager
+            );
+            this.components.playlistManager = new PlaylistManager(this.components.database);
+            this.components.playerManager = new PlayerManager(this.components.appState);
 
-        // Initialize renderers
-        this.components.channelRenderer = new ChannelRenderer(
-            this.components.epgManager,
-            this.components.appState
-        );
-        this.components.epgRenderer = new EPGRenderer(this.components.timeManager);
+            this.components.channelRenderer = new ChannelRenderer(
+                this.components.epgManager,
+                this.components.appState
+            );
+            this.components.epgRenderer = new EPGRenderer(this.components.timeManager);
 
-        // Setup event listeners
-        this.setupEventListeners();
+            this.setupEventListeners();
+            this.setupUI();
+            await this.loadInitialData();
 
-        // Initialize UI
-        this.setupUI();
-
-        // Load existing data
-        await this.loadInitialData();
+        } catch (error) {
+            console.error('Failed to initialize IPTV App:', error);
+            this.components.notifications?.show('Ошибка инициализации', error.message, 'error');
+        }
     }
 
     setupEventListeners() {
         const { appState, epgManager, playlistManager, playerManager, notifications } = this.components;
 
-        // Playlist events
-        this.subscribe(playlistManager, 'loaded', ({ channels, groups }) => {
+        this.subscribe(playlistManager, 'loaded', ({ channels, groups, url }) => {
+            appState.clearCaches();
             appState.update({ channels, groups });
             this.updateGroupFilter(groups);
             this.renderChannels();
             notifications.show('Плейлист загружен', `Загружено ${channels.length} каналов`, 'success');
+            epgManager.load().catch(() => {});
         });
 
-        // EPG events
         this.subscribe(epgManager, 'loaded', (epgData) => {
             appState.set('epgData', epgData);
             this.renderChannels();
@@ -1442,25 +1585,30 @@ class IPTVApp {
         });
 
         this.subscribe(epgManager, 'update', () => {
+            epgManager.matchCache.clear();
+            epgManager.programCache.clear();
             this.updateVisibleChannelPrograms();
+
             const currentChannel = appState.get('currentChannel');
-            if (currentChannel) {
-                this.renderEPG(currentChannel.epgData);
+            if (currentChannel?.epgData) {
+                const freshEpgData = epgManager.findMatchingChannel(currentChannel.name);
+                this.renderEPG(freshEpgData);
             }
         });
 
-        // Channel selection
         this.subscribe(appState, 'channelSelected', ({ channel, epgData }) => {
-            playerManager.play(channel, epgData);
-            this.renderEPG(epgData);
+            const freshEpgData = epgManager.findMatchingChannel(channel.name);
+            playerManager.play(channel, freshEpgData);
+            this.renderEPG(freshEpgData);
         });
 
-        // Error handling
         this.subscribe(epgManager, 'error', (error) => {
+            console.error('EPG error:', error);
             notifications.show('Ошибка EPG', error.message, 'error');
         });
 
         this.subscribe(playlistManager, 'error', (error) => {
+            console.error('Playlist error:', error);
             notifications.show('Ошибка плейлиста', error.message, 'error');
         });
     }
@@ -1495,11 +1643,9 @@ class IPTVApp {
 
         const closeDialog = () => dialog.classList.remove('active');
 
-        // Close buttons
         dialog.querySelector('.dialog-close')?.addEventListener('click', closeDialog);
         document.getElementById('cancel-load-btn')?.addEventListener('click', closeDialog);
 
-        // Tabs
         dialog.querySelectorAll('.dialog-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.dialog-content').forEach(content => {
@@ -1509,11 +1655,11 @@ class IPTVApp {
 
                 dialog.querySelectorAll('.dialog-tab').forEach(t => {
                     t.classList.toggle('active', t === tab);
+                    t.setAttribute('aria-selected', t === tab);
                 });
             });
         });
 
-        // File input
         const fileInput = document.getElementById('playlist-file');
         const loadFileBtn = document.getElementById('load-file-btn');
         const fileNameDisplay = document.getElementById('file-name');
@@ -1541,23 +1687,24 @@ class IPTVApp {
                 }
 
                 try {
+                    loadFileBtn.disabled = true;
                     await this.components.playlistManager.loadFromFile(file);
                     if (statusEl) {
                         statusEl.textContent = 'Плейлист успешно загружен';
                         statusEl.className = 'status-message status-success';
                     }
-                    await this.components.epgManager.load();
                     setTimeout(closeDialog, 1500);
                 } catch (error) {
                     if (statusEl) {
                         statusEl.textContent = 'Ошибка: ' + error.message;
                         statusEl.className = 'status-message status-error';
                     }
+                } finally {
+                    loadFileBtn.disabled = false;
                 }
             });
         }
 
-        // URL input
         const urlInput = document.getElementById('playlist-url');
         const loadUrlBtn = document.getElementById('load-url-btn');
 
@@ -1580,23 +1727,24 @@ class IPTVApp {
                 }
 
                 try {
+                    loadUrlBtn.disabled = true;
                     await this.components.playlistManager.loadFromUrl(url);
                     if (statusEl) {
                         statusEl.textContent = 'Плейлист успешно загружен';
                         statusEl.className = 'status-message status-success';
                     }
-                    await this.components.epgManager.load();
                     setTimeout(closeDialog, 1500);
                 } catch (error) {
                     if (statusEl) {
                         statusEl.textContent = 'Ошибка: ' + error.message;
                         statusEl.className = 'status-message status-error';
                     }
+                } finally {
+                    loadUrlBtn.disabled = false;
                 }
             });
         }
 
-        // Default playlist
         const loadDefaultBtn = document.getElementById('load-default-btn');
         if (loadDefaultBtn) {
             loadDefaultBtn.addEventListener('click', async () => {
@@ -1608,23 +1756,24 @@ class IPTVApp {
                 }
 
                 try {
+                    loadDefaultBtn.disabled = true;
                     await this.components.playlistManager.loadFromUrl(CONFIG.DEFAULT_PLAYLIST_URL);
                     if (statusEl) {
                         statusEl.textContent = 'Тестовый плейлист успешно загружен';
                         statusEl.className = 'status-message status-success';
                     }
-                    await this.components.epgManager.load();
                     setTimeout(closeDialog, 1500);
                 } catch (error) {
                     if (statusEl) {
                         statusEl.textContent = 'Ошибка: ' + error.message;
                         statusEl.className = 'status-message status-error';
                     }
+                } finally {
+                    loadDefaultBtn.disabled = false;
                 }
             });
         }
 
-        // Store reference for external access
         this.showPlaylistDialog = () => {
             dialog.classList.add('active');
         };
@@ -1650,6 +1799,7 @@ class IPTVApp {
                 }
 
                 try {
+                    refreshBtn.disabled = true;
                     await this.components.epgManager.refresh();
                     if (statusEl) {
                         statusEl.textContent = 'EPG успешно обновлен';
@@ -1662,6 +1812,8 @@ class IPTVApp {
                         statusEl.textContent = 'Ошибка: ' + error.message;
                         statusEl.className = 'status-message status-error';
                     }
+                } finally {
+                    refreshBtn.disabled = false;
                 }
             });
         }
@@ -1679,7 +1831,7 @@ class IPTVApp {
                 this.components.appState.set('searchQuery', value);
                 this.renderChannels();
                 if (clearButton) {
-                    clearButton.style.display = value ? 'block' : 'none';
+                    clearButton.style.display = value ? 'flex' : 'none';
                 }
             }, CONFIG.SEARCH_DEBOUNCE_DELAY);
 
@@ -1705,27 +1857,32 @@ class IPTVApp {
             });
         }
 
-        // Button handlers
         document.getElementById('refresh-epg')?.addEventListener('click', () => this.showEpgDialog());
         document.getElementById('load-new-playlist')?.addEventListener('click', () => this.showPlaylistDialog());
     }
 
     async loadInitialData() {
-        const playlists = await this.components.database.getAll('playlists');
+        try {
+            const playlists = await this.components.database.getAll('playlists');
 
-        if (playlists?.length > 0) {
-            const playlist = playlists[0];
-            this.components.appState.set('currentPlaylistUrl', playlist.url);
+            if (playlists?.length > 0) {
+                const playlist = playlists[0];
+                this.components.appState.set('currentPlaylistUrl', playlist.url);
 
-            this.components.playlistManager.parseM3U8(playlist.data);
-            const { channels, groups } = this.components.playlistManager;
+                this.components.playlistManager.parseM3U8(playlist.data);
+                const { channels, groups } = this.components.playlistManager;
 
-            this.components.appState.update({ channels, groups });
-            this.updateGroupFilter(groups);
+                this.components.appState.update({ channels, groups });
+                this.updateGroupFilter(groups);
 
-            await this.components.epgManager.load();
-            this.renderChannels();
-        } else {
+                await this.components.epgManager.load();
+                this.renderChannels();
+            } else {
+                this.showPlaylistDialog();
+            }
+        } catch (error) {
+            console.error('Failed to load initial data:', error);
+            this.components.notifications.show('Ошибка загрузки', 'Не удалось загрузить данные', 'error');
             this.showPlaylistDialog();
         }
     }
@@ -1760,11 +1917,16 @@ class IPTVApp {
         const filter = document.getElementById('group-filter');
         if (!filter) return;
 
+        const currentValue = filter.value;
         filter.innerHTML = '<option value="">Все группы</option>';
+
         groups.forEach(group => {
             const option = document.createElement('option');
             option.value = group;
             option.textContent = group;
+            if (group === currentValue) {
+                option.selected = true;
+            }
             filter.appendChild(option);
         });
     }
@@ -1781,10 +1943,24 @@ class IPTVApp {
             if (channel) {
                 const epgData = epgManager.findMatchingChannel(channel.name);
                 const currentProgram = epgManager.getCurrentProgram(channel.name, epgData);
+                const progressBar = epgManager.getProgressBar(epgData);
 
                 const programElement = item.querySelector('.channel-program');
                 if (programElement) {
                     programElement.textContent = currentProgram;
+                    programElement.title = currentProgram;
+                }
+
+                const existingProgress = item.querySelector('.channel-progress-container');
+                if (existingProgress) {
+                    existingProgress.remove();
+                }
+
+                if (progressBar) {
+                    const channelInfo = item.querySelector('.channel-info');
+                    if (channelInfo) {
+                        channelInfo.insertAdjacentHTML('beforeend', progressBar);
+                    }
                 }
             }
         });
