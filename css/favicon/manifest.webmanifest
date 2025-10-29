@@ -1,0 +1,110 @@
+{
+  "lang": "ru-RU",
+  "id": "IPTV Web Player",
+  "name": "IPTV Web Player - Смотрите IPTV онлайн",
+  "short_name": "IPTV Web Player",
+  "description": "IPTV Web Player - смотрите любимые каналы онлайн с удобным интерфейсом и функциями управления потоком.",
+  "theme_color": "#00ffff",
+  "background_color": "#ffffff",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "start_url": "/index.php",
+  "scope": "/",
+  "categories": [
+    "video",
+    "entertainment",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "http://iptv.apiweb.uz/css/favicon/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "http://iptv.apiweb.uz/css/favicon/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "permissions": {
+    "device-storage:sdcard": {
+      "access": "readwrite"
+    },
+    "device-storage:video": {
+      "access": "readwrite"
+    },
+    "audio-channel-normal": {
+      "description": "Необходимо для воспроизведения видео и аудио контента приложения"
+    },
+    "audio-channel-content": {
+      "description": "Для воспроизведения аудио в фоновом режиме"
+    },
+    "notifications": {
+      "description": "Отправка уведомлений о текущем воспроизведении IPTV канала"
+    },
+    "audio-channel-notification": {
+      "description": "Для воспроизведения видео через панель уведомлений"
+    },
+    "fullscreen": {
+      "description": "Для отображения приложения в полноэкранном режиме"
+    },
+    "volumemanager": {
+      "description": "Для управления системной громкостью"
+    }
+  },
+  "display_override": [
+    "fullscreen",
+    "standalone",
+    "minimal-ui"
+  ],
+  "prefer_related_applications": false,
+  "b2g_features": {
+    "version": "3.1.1",
+    "type": "privileged",
+    "core": true,
+    "default_locale": "ru-RU",
+    "developer": {
+      "name": "arma7x",
+      "url": "http://iptv.apiweb.uz/"
+    },
+    "dependencies": {
+      "ads-sdk": "1.5.3"
+    },
+    "locales": {
+      "ru-RU": {
+        "name": "IPTV Web Player",
+        "subtitle": "Смотрите IPTV онлайн",
+        "description": "Лучшие каналы IPTV онлайн"
+      },
+      "en-US": {
+        "name": "IPTV Web Player",
+        "subtitle": "Watch IPTV Online",
+        "description": "Watch the best IPTV channels online"
+      }
+    }
+  },
+  "additional_properties": {
+    "launch_handler": {
+      "client_mode": "webapp",
+      "default_action": {
+        "action": "open",
+        "url": "/index.php"
+      }
+    },
+    "features": {
+      "offline_enabled": true,
+      "background_sync": true
+    },
+    "security": {
+      "https_required": true,
+      "content_security_policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; media-src 'self';"
+    },
+    "theme": {
+      "color_scheme": "dark",
+      "appearance": "default"
+    }
+  }
+}
