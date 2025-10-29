@@ -1,12 +1,12 @@
 // ===== CONFIGURATION & CONSTANTS =====
 const CONFIG = Object.freeze({
-    DB_NAME: 'IPTVDB2',
+    DB_NAME: 'IPTV-DB',
     DB_VERSION: 4,
     M3U8_EXPIRY: 365 * 24 * 60 * 60 * 1000,
     EPG_EXPIRY: 12 * 60 * 60 * 1000,
     EPG_TIMEZONE_OFFSET: 3,
-    EPG_URL: 'http://iptv.apiweb.uz/epg.php?default=1',
-    DEFAULT_PLAYLIST_URL: 'http://iptv.apiweb.uz/playlist.php?default=1',
+    EPG_URL: '/epg.php?default=1',
+    DEFAULT_PLAYLIST_URL: '/playlist.php?default=1',
     CHANNELS_PER_PAGE: 2500,
     NOTIFICATION_DURATION: 6000,
     EPG_UPDATE_INTERVAL: 5 * 60 * 1000,
