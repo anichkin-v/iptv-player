@@ -16,7 +16,7 @@
     <!-- Open Graph (OG) - для социальных сетей -->
     <meta property="og:title" content="IPTV Web Player - Смотрите Онлайн">
     <meta property="og:description" content="Наслаждайтесь любимыми  передачами онлайн на IPTV Web Player. Бесплатно, без регистрации.">
-    <meta property="og:image" content="http://iptv.apiweb.uz/css/favicon/no_logo.png">
+    <meta property="og:image" content="./css/favicon/no_logo.png">
     <meta property="og:url" content="http://iptv.apiweb.uz/">
     <meta property="og:type" content="website">
 
@@ -24,12 +24,12 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="IPTV Web Player - Смотрите Онлайн">
     <meta name="twitter:description" content="Наслаждайтесь любимыми  передачами онлайн на IPTV Web Player. Бесплатно, без регистрации.">
-    <meta name="twitter:image" content="http://iptv.apiweb.uz/css/favicon/no_logo.png">
+    <meta name="twitter:image" content="./css/favicon/no_logo.png">
 
     <!-- Favicon -->
-    <link rel="icon" href="http://iptv.apiweb.uz/css/favicon/favicon.ico" sizes="48x48">
-    <link rel="apple-touch-icon" href="http://iptv.apiweb.uz/css/favicon/apple-touch-icon.png"/>
-    <link rel="manifest" href="http://iptv.apiweb.uz/css/favicon/manifest.webmanifest"/>
+    <link rel="icon" href="./css/favicon/favicon.ico" sizes="48x48">
+    <link rel="apple-touch-icon" href="./css/favicon/apple-touch-icon.png"/>
+    <link rel="manifest" href="./css/favicon/manifest.webmanifest"/>
 
     <!-- Theme color for mobile browsers -->
     <meta name="theme-color" content="#181818">
@@ -50,7 +50,7 @@
                 "https://twitter.com",
                 "https://www.instagram.com"
             ],
-            "image": "http://iptv.apiweb.uz/css/favicon/no_logo.png",
+            "image": "./css/favicon/no_logo.png",
             "author": {
                 "@type": "Organization",
                 "name": "IPTV Web Player"
@@ -157,10 +157,10 @@
                    title="Эта настройка нарезает и сохраняет трансляцию сегментами по 15 минут (по умолчанию)">
                 <span data-i18n="ui.сегмент"></span>
                 <select id="record-segment">
-                    <option value="manual" data-i18n="ui.manual">Ручной</option>
+                    <option value="manual" selected data-i18n="ui.manual">Ручной</option>
                     <option value="5" data-i18n="ui.5_min">5 мин</option>
                     <option value="10" data-i18n="ui.10_min">10 мин</option>
-                    <option value="15" selected data-i18n="ui.15_min">15 мин</option>
+                    <option value="15" data-i18n="ui.15_min">15 мин</option>
                     <option value="30" data-i18n="ui.30_min">30 мин</option>
                     <option value="60" data-i18n="ui.60_min">60 мин</option>
                 </select>
