@@ -300,7 +300,7 @@
 
 <script src="./dist/player.js" defer></script>
 <script src="./js/iptv.js" defer></script>
-<script>window.UA_PROXY_PATH = '/user-agent-proxy.php';</script>
+<script>window.UA_PROXY_PATH = './user-agent-proxy.php';</script>
 <script src="./js/ua_settings.js" defer></script>
 <script src="./js/favorites.js" defer></script>
 <script src="./js/epg-icon-cache.js"></script>
